@@ -1,6 +1,6 @@
 import { Location } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { conditionLabel, fetchWeatherForLocation } from "@/lib/weather";
+import { conditionLabel, fetchWeatherForLocation, fetchHistoricalWeatherForLocation } from "@/lib/weather";
 
 export type IngestResult = {
   locationId: string;
@@ -11,32 +11,40 @@ export type IngestResult = {
 /**
  * Fetches weather for a single location and persists sample + fetch log.
  */
-export async function ingestLocation(loc: Location): Promise<IngestResult> {
+export async function ingestLocation(loc: Location, days?: number): Promise<IngestResult> {
   try {
-    const weather = await fetchWeatherForLocation({
-      latitude: loc.latitude,
-      longitude: loc.longitude,
-    });
+    const weatherSamples = days
+      ? await fetchHistoricalWeatherForLocation({
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          days,
+        })
+      : [await fetchWeatherForLocation({
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+        })];
 
-    await prisma.weatherSample.create({
-      data: {
-        locationId: loc.id,
-        observedAt: weather.observedAt,
-        tempC: weather.tempC,
-        windSpeedMs: weather.windSpeedMs,
-        precipMm: weather.precipMm,
-        visibilityKm: weather.visibilityKm,
-        conditionCode: conditionLabel(weather.conditionCode),
-        source: weather.source,
-      },
-    });
+    for (const weather of weatherSamples) {
+      await prisma.weatherSample.create({
+        data: {
+          locationId: loc.id,
+          observedAt: weather.observedAt,
+          tempC: weather.tempC,
+          windSpeedMs: weather.windSpeedMs,
+          precipMm: weather.precipMm,
+          visibilityKm: weather.visibilityKm,
+          conditionCode: conditionLabel(weather.conditionCode),
+          source: weather.source,
+        },
+      });
+    }
 
     await prisma.fetchLog.create({
       data: {
         locationId: loc.id,
         success: true,
-        message: `Ingested from ${weather.source}`,
-        source: weather.source,
+        message: `Ingested ${weatherSamples.length} sample(s) from ${weatherSamples[0].source}`,
+        source: weatherSamples[0].source,
       },
     });
 
@@ -57,9 +65,9 @@ export async function ingestLocation(loc: Location): Promise<IngestResult> {
 
 /**
  * Ingests for a filtered set of locations. If locationId is provided, only that
- * location is ingested.
+ * location is ingested. If days is provided, fetches historical data for that many days.
  */
-export async function ingestMany(locationId?: string | null) {
+export async function ingestMany(locationId?: string | null, days?: number) {
   const locations = await prisma.location.findMany({
     where: locationId ? { id: locationId } : undefined,
     orderBy: { name: "asc" },
@@ -69,7 +77,7 @@ export async function ingestMany(locationId?: string | null) {
     return { locations, results: [], ingested: 0 };
   }
 
-  const results = await Promise.all(locations.map((loc) => ingestLocation(loc)));
+  const results = await Promise.all(locations.map((loc) => ingestLocation(loc, days)));
   const ingested = results.filter((r) => r.status === "ok").length;
 
   return { locations, results, ingested };

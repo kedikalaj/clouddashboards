@@ -65,6 +65,18 @@ export async function fetchWeatherForLocation(args: {
   return fetchOpenMeteo(args);
 }
 
+export async function fetchHistoricalWeatherForLocation(args: {
+  latitude: number;
+  longitude: number;
+  days: number;
+}): Promise<NormalizedWeather[]> {
+  if (PROVIDER === "openweathermap") {
+    // OpenWeatherMap doesn't have free historical data, so we'll fetch current instead
+    return [await fetchOpenWeatherMap(args)];
+  }
+  return fetchOpenMeteoHistorical(args);
+}
+
 async function fetchOpenMeteo({ latitude, longitude }: { latitude: number; longitude: number }): Promise<NormalizedWeather> {
   const params = new URLSearchParams({
     latitude: latitude.toString(),
@@ -91,6 +103,58 @@ async function fetchOpenMeteo({ latitude, longitude }: { latitude: number; longi
     conditionCode: String(current.weather_code ?? "unknown"),
     source: "open-meteo",
   };
+}
+
+async function fetchOpenMeteoHistorical({
+  latitude,
+  longitude,
+  days,
+}: {
+  latitude: number;
+  longitude: number;
+  days: number;
+}): Promise<NormalizedWeather[]> {
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+
+  const formatDate = (date: Date) => date.toISOString().split("T")[0];
+
+  const params = new URLSearchParams({
+    latitude: latitude.toString(),
+    longitude: longitude.toString(),
+    start_date: formatDate(startDate),
+    end_date: formatDate(endDate),
+    daily: "temperature_2m_max,temperature_2m_min,temperature_2m_mean,wind_speed_10m_max,precipitation_sum,visibility_min,weather_code",
+    timezone: "auto",
+  });
+
+  const res = await fetch(`https://api.open-meteo.com/v1/archive?${params.toString()}`, {
+    next: { revalidate: 0 },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Open-Meteo historical request failed: ${res.status}`);
+  }
+
+  const json = await res.json();
+  const daily = json.daily ?? {};
+  const times = daily.time ?? [];
+  const temps = daily.temperature_2m_mean ?? [];
+  const winds = daily.wind_speed_10m_max ?? [];
+  const precips = daily.precipitation_sum ?? [];
+  const visibilities = daily.visibility_min ?? [];
+  const codes = daily.weather_code ?? [];
+
+  return times.map((time: string, index: number) => ({
+    observedAt: new Date(`${time}T12:00:00Z`),
+    tempC: numberOrNull(temps[index]),
+    windSpeedMs: numberOrNull(winds[index]),
+    precipMm: numberOrNull(precips[index]),
+    visibilityKm: numberOrNull((visibilities[index] ?? null) !== null ? visibilities[index] / 1000 : null),
+    conditionCode: String(codes[index] ?? "unknown"),
+    source: "open-meteo",
+  }));
 }
 
 async function fetchOpenWeatherMap({ latitude, longitude }: { latitude: number; longitude: number }): Promise<NormalizedWeather> {

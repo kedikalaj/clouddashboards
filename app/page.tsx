@@ -71,15 +71,26 @@ export default function Home() {
   const [live, setLive] = useState<LiveSample[]>([]);
   const [loading, setLoading] = useState(true);
   const [ingesting, setIngesting] = useState(false);
+  const [ingestingHistorical, setIngestingHistorical] = useState(false);
   const [ingestMessage, setIngestMessage] = useState<string | null>(null);
 
-  const fetchDashboard = async () => {
+  const fetchDashboard = async (options?: { hours?: number; days?: number }) => {
     setLoading(true);
     setIngestMessage(null);
     try {
+      const overviewUrl = new URL("/api/analytics/overview", window.location.origin);
+      const trendsUrl = new URL("/api/analytics/trends", window.location.origin);
+      
+      if (options?.hours) {
+        overviewUrl.searchParams.set("hours", options.hours.toString());
+      }
+      if (options?.days) {
+        trendsUrl.searchParams.set("days", options.days.toString());
+      }
+
       const [overviewRes, trendsRes, liveRes] = await Promise.all([
-        fetch("/api/analytics/overview", { cache: "no-store" }),
-        fetch("/api/analytics/trends", { cache: "no-store" }),
+        fetch(overviewUrl.toString(), { cache: "no-store" }),
+        fetch(trendsUrl.toString(), { cache: "no-store" }),
         fetch("/api/live", { cache: "no-store" }),
       ]);
 
@@ -121,6 +132,26 @@ export default function Home() {
       setIngestMessage(`Ingest error: ${message}`);
     } finally {
       setIngesting(false);
+    }
+  };
+
+  const triggerIngestHistorical = async () => {
+    setIngestingHistorical(true);
+    setIngestMessage(null);
+    try {
+      const res = await fetch("/api/ingest?days=10", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json?.error || "Ingest failed");
+      }
+      setIngestMessage(`Ingested ${json.ingested ?? 0} locations (last 10 days).`);
+      // Fetch dashboard with 10 days of data to show the historical data
+      await fetchDashboard({ hours: 240, days: 10 });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      setIngestMessage(`Ingest error: ${message}`);
+    } finally {
+      setIngestingHistorical(false);
     }
   };
 
@@ -198,11 +229,20 @@ export default function Home() {
           ) : null}
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={fetchDashboard} disabled={loading || ingesting}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              void fetchDashboard();
+            }}
+            disabled={loading || ingesting || ingestingHistorical}
+          >
             {loading ? "Refreshing..." : "Refresh"}
           </Button>
-          <Button onClick={triggerIngest} disabled={ingesting}>
+          <Button onClick={triggerIngest} disabled={ingesting || ingestingHistorical}>
             {ingesting ? "Ingesting..." : "Ingest now"}
+          </Button>
+          <Button variant="outline" onClick={triggerIngestHistorical} disabled={ingesting || ingestingHistorical}>
+            {ingestingHistorical ? "Ingesting..." : "Ingest last 10 days"}
           </Button>
           <Badge variant="outline">Live data</Badge>
         </div>

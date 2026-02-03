@@ -1,0 +1,78 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Location {
+  id           String           @id @default(cuid())
+  name         String
+  locationType String           @default("CITY")
+  latitude     Float
+  longitude    Float
+  timezone     String
+  samples      WeatherSample[]
+  aggregates   DailyAggregate[]
+  fetchLogs    FetchLog[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([name])
+}
+
+model WeatherSample {
+  id            String   @id @default(cuid())
+  locationId    String
+  observedAt    DateTime
+  tempC         Float?
+  windSpeedMs   Float?
+  precipMm      Float?
+  visibilityKm  Float?
+  conditionCode String
+  source        String?
+  createdAt     DateTime @default(now())
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId, observedAt])
+}
+
+model DailyAggregate {
+  id              String   @id @default(cuid())
+  locationId      String
+  date            DateTime
+  tempMinC        Float?
+  tempMaxC        Float?
+  tempAvgC        Float?
+  windAvgMs       Float?
+  precipTotalMm   Float?
+  visibilityAvgKm Float?
+  conditionCounts String?
+  riskScore       Int?
+  severeFlag      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, date])
+  @@index([date])
+}
+
+model FetchLog {
+  id         String   @id @default(cuid())
+  locationId String?
+  fetchedAt  DateTime @default(now())
+  success    Boolean
+  message    String?
+  source     String?
+
+  location Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+
+  @@index([locationId, fetchedAt])
+}

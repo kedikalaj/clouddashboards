@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { ingestMany } from "@/lib/ingest";
 
 export const runtime = "nodejs";
-
 export async function POST(req: Request) {
   try {
     const { searchParams } = new URL(req.url);

@@ -41,6 +41,18 @@ type ComparisonRow = {
   severeCount: number;
 };
 
+async function parseJsonResponse<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  const data = text ? (JSON.parse(text) as T & { error?: string }) : ({} as T & { error?: string });
+
+  if (!res.ok) {
+    const message = typeof data?.error === "string" ? data.error : res.statusText || "Request failed";
+    throw new Error(message);
+  }
+
+  return data as T;
+}
+
 export default function ComparisonPage() {
   const [rows, setRows] = useState<ComparisonRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +63,7 @@ export default function ComparisonPage() {
       setLoading(true);
       try {
         const res = await fetch("/api/analytics/comparison", { cache: "no-store" });
-        const json = await res.json();
+        const json = await parseJsonResponse<{ rows?: ComparisonRow[] }>(res);
         if (!cancelled) setRows(json.rows ?? []);
       } catch (error) {
         console.error("Failed to load comparison", error);

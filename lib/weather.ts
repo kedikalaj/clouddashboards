@@ -17,6 +17,20 @@ const PROVIDER: WeatherProvider =
 
 export function conditionLabel(code: string): string {
   const normalized = code.toLowerCase();
+  const numeric = Number.parseInt(normalized, 10);
+  if (!Number.isNaN(numeric)) {
+    if (numeric === 0) return "Clear";
+    if (numeric === 1 || numeric === 2) return "Partly cloudy";
+    if (numeric === 3) return "Cloudy";
+    if (numeric === 45 || numeric === 48) return "Fog";
+    if (numeric >= 51 && numeric <= 57) return "Drizzle";
+    if (numeric >= 61 && numeric <= 67) return "Rain";
+    if (numeric >= 71 && numeric <= 77) return "Snow";
+    if (numeric >= 80 && numeric <= 82) return "Rain showers";
+    if (numeric === 85 || numeric === 86) return "Snow showers";
+    if (numeric === 95) return "Thunderstorm";
+    if (numeric === 96 || numeric === 99) return "Thunderstorm with hail";
+  }
   if (normalized.includes("storm") || normalized.includes("thunder")) return "Storm";
   if (normalized.includes("rain")) return "Rain";
   if (normalized.includes("snow")) return "Snow";

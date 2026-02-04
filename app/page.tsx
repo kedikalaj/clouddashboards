@@ -67,6 +67,18 @@ type LiveSample = {
 
 const pieColors = ["#1f2937", "#2563eb", "#f97316", "#4b5563", "#9ca3af"];
 
+async function parseJsonResponse<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  const data = text ? (JSON.parse(text) as T & { error?: string }) : ({} as T & { error?: string });
+
+  if (!res.ok) {
+    const message = typeof data?.error === "string" ? data.error : res.statusText || "Request failed";
+    throw new Error(message);
+  }
+
+  return data as T;
+}
+
 export default function Home() {
   const [overview, setOverview] = useState<OverviewMetrics | null>(null);
   const [trends, setTrends] = useState<TrendPoint[]>([]);
@@ -96,9 +108,11 @@ export default function Home() {
         fetch("/api/live", { cache: "no-store" }),
       ]);
 
-      const overviewJson = await overviewRes.json();
-      const trendsJson = await trendsRes.json();
-      const liveJson = await liveRes.json();
+      const [overviewJson, trendsJson, liveJson] = await Promise.all([
+        parseJsonResponse<OverviewMetrics>(overviewRes),
+        parseJsonResponse<{ points?: TrendPoint[] }>(trendsRes),
+        parseJsonResponse<{ samples?: LiveSample[] }>(liveRes),
+      ]);
 
       setOverview(overviewJson);
       setTrends(trendsJson.points ?? []);
@@ -123,10 +137,7 @@ export default function Home() {
     setIngestMessage(null);
     try {
       const res = await fetch("/api/ingest", { method: "POST" });
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json?.error || "Ingest failed");
-      }
+      const json = await parseJsonResponse<{ ingested?: number } & { error?: string }>(res);
       setIngestMessage(`Ingested ${json.ingested ?? 0} locations.`);
       await fetchDashboard();
     } catch (error) {
@@ -142,10 +153,7 @@ export default function Home() {
     setIngestMessage(null);
     try {
       const res = await fetch("/api/ingest?days=10", { method: "POST" });
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json?.error || "Ingest failed");
-      }
+      const json = await parseJsonResponse<{ ingested?: number } & { error?: string }>(res);
       setIngestMessage(`Ingested ${json.ingested ?? 0} locations (last 10 days).`);
       // Fetch dashboard with 10 days of data to show the historical data
       await fetchDashboard({ hours: 240, days: 10 });
@@ -303,7 +311,7 @@ export default function Home() {
         <Card>
           <CardHeader>
             <CardTitle>Condition mix</CardTitle>
-            <CardDescription>Share of observed conditions</CardDescription>
+            <CardDescription>Share of observed conditions based on latest samples</CardDescription>
           </CardHeader>
           <CardContent className="grid h-72 grid-cols-[1fr_auto] items-center gap-4">
             {conditionDistribution.length ? (

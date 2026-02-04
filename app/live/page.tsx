@@ -33,6 +33,18 @@ type LiveSample = {
   risk: number;
 };
 
+async function parseJsonResponse<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  const data = text ? (JSON.parse(text) as T & { error?: string }) : ({} as T & { error?: string });
+
+  if (!res.ok) {
+    const message = typeof data?.error === "string" ? data.error : res.statusText || "Request failed";
+    throw new Error(message);
+  }
+
+  return data as T;
+}
+
 export default function LivePage() {
   const [samples, setSamples] = useState<LiveSample[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +55,7 @@ export default function LivePage() {
       setLoading(true);
       try {
         const res = await fetch("/api/live?hours=6", { cache: "no-store" });
-        const json = await res.json();
+        const json = await parseJsonResponse<{ samples?: LiveSample[] }>(res);
         if (!cancelled) setSamples(json.samples ?? []);
       } catch (error) {
         console.error("Failed to load live window", error);
